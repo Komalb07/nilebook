@@ -1,0 +1,52 @@
+# Local secrets and private config
+.env
+.env.*
+!.env.example
+*.env.local
+*.env.*.local
+
+# Backend secrets, databases, and runtime state
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.venv/
+backend/venv/
+backend/env/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/tests/__pycache__/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/app/*.db
+backend/app/*.sqlite
+backend/app/*.sqlite3
+backend/finance.db
+
+# Frontend local config and generated files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/node_modules/
+frontend/coverage/
+frontend/.vercel/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Python / Node generated files
+__pycache__/
+*.py[cod]
+node_modules/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS / editor / logs
+.DS_Store
+*.log
+*.pem
