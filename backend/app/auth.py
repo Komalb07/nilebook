@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import os
 import secrets
 import hashlib
+import traceback
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from email_service import send_verification_email, send_password_reset_email
 from currency_conversion import SUPPORTED_CURRENCIES
@@ -63,7 +64,37 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(models.User).filter(models.User.email == user.email).first()
 
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        if existing_user.is_verified:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        raw_verification_token = create_raw_token()
+        verification_token_hash = hash_token(raw_verification_token)
+
+        existing_user.email_verification_token_hash = verification_token_hash
+        existing_user.email_verification_expires_at = datetime.utcnow() + timedelta(
+            hours=EMAIL_VERIFICATION_EXPIRE_HOURS
+        )
+
+        verification_link = f"{FRONTEND_URL}/verify-email?token={raw_verification_token}"
+
+        try:
+            send_verification_email(existing_user.email, verification_link)
+        except Exception as exc:
+            db.rollback()
+            print("[Nilebook email error] signup resend failed:", repr(exc))
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=502,
+                detail="Verification email could not be sent. Please try again later.",
+            )
+
+        db.commit()
+
+        return {
+            "message": "This email was already registered but not verified. We sent a new verification link.",
+            "user_id": existing_user.id,
+            "email": existing_user.email,
+        }
 
     default_currency = (user.default_currency or "USD").strip().upper()
     if default_currency not in SUPPORTED_CURRENCIES:
@@ -91,8 +122,10 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
     try:
         send_verification_email(new_user.email, verification_link)
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        print("[Nilebook email error] signup verification failed:", repr(exc))
+        traceback.print_exc()
         raise HTTPException(
             status_code=502,
             detail="Account was not created because the verification email could not be sent.",
@@ -163,8 +196,10 @@ def resend_verification(
 
     try:
         send_verification_email(user.email, verification_link)
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        print("[Nilebook email error] resend verification failed:", repr(exc))
+        traceback.print_exc()
         raise HTTPException(
             status_code=502,
             detail="Verification email could not be sent. Please try again later.",
@@ -237,8 +272,10 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
 
     try:
         send_password_reset_email(user.email, reset_link)
-    except Exception:
+    except Exception as exc:
         db.rollback()
+        print("[Nilebook email error] password reset failed:", repr(exc))
+        traceback.print_exc()
         raise HTTPException(
             status_code=502,
             detail="Password reset email could not be sent. Please try again later.",
