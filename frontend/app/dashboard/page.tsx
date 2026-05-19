@@ -74,6 +74,11 @@ type ParsedTransaction = {
   review_level: "none" | "quick" | "full";
 };
 
+type ParsedTransactionBatch = {
+  transactions: Partial<ParsedTransaction>[];
+  message?: string;
+};
+
 type Transaction = {
   id: string;
   raw_text: string;
@@ -634,6 +639,48 @@ export default function DashboardPage() {
 
       if (!response.ok) {
         setMessage(data.detail || "Parse failed");
+        return;
+      }
+
+      if (Array.isArray((data as ParsedTransactionBatch).transactions)) {
+        const normalizedTransactions = (data as ParsedTransactionBatch).transactions.map(
+          (transaction) => normalizeParsedData(transaction)
+        );
+
+        const canAutoSaveAll = normalizedTransactions.every(
+          (transaction) =>
+            transaction.review_level === "none" &&
+            transaction.recurring_action === "none" &&
+            !transaction.requires_conversion_confirmation
+        );
+
+        if (!canAutoSaveAll) {
+          setParsedData(normalizedTransactions[0] || null);
+          setMessage(
+            `Found ${normalizedTransactions.length} transactions. Please review the first one before saving.`
+          );
+          return;
+        }
+
+        let savedCount = 0;
+        for (const transaction of normalizedTransactions) {
+          const saved = await saveTransactionDirect(transaction);
+          if (saved) savedCount += 1;
+        }
+
+        if (savedCount > 0) {
+          setParsedData(null);
+          setNote("");
+          setMessage(
+            savedCount === 1
+              ? "1 transaction saved automatically."
+              : `${savedCount} transactions saved automatically.`
+          );
+          if (userId) {
+            fetchTransactions(userId);
+          }
+        }
+
         return;
       }
 

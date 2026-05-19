@@ -741,6 +741,32 @@ class ParserRuleTests(unittest.TestCase):
         self.assertEqual(result["original_currency"], "CHF")
         self.assertTrue(result["requires_conversion_confirmation"])
 
+    def test_multi_item_purchase_note_splits_into_transactions(self):
+        note = "I purchased a bag of onions for 20$ and a rice bag for 25$"
+        result = parser.extract_multi_item_expense_transactions(note, "USD")
+
+        self.assertEqual(len(result), 2)
+        self.assert_subset(
+            result[0],
+            {
+                "amount": 20.0,
+                "category": "grocery",
+                "transaction_direction": "expense",
+                "transaction_subject": "bag of onions",
+                "review_level": "none",
+            },
+        )
+        self.assert_subset(
+            result[1],
+            {
+                "amount": 25.0,
+                "category": "grocery",
+                "transaction_direction": "expense",
+                "transaction_subject": "rice bag",
+                "review_level": "none",
+            },
+        )
+
     def test_parse_note_uses_configured_openai_provider(self):
         note = "I paid 12 dollars for coffee"
         original_provider = parser.os.environ.get("LLM_PROVIDER")

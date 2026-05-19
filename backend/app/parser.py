@@ -602,7 +602,7 @@ def infer_category_from_text(parsed: dict, raw_text: str):
     grocery_signals = [
         "grocery", "groceries", "supermarket", "market", "food",
         "rice", "cereal", "dairy", "milk", "bread", "eggs", "cheese",
-        "vegetable", "vegetables", "fruit", "fruits",
+        "onion", "onions", "vegetable", "vegetables", "fruit", "fruits",
     ]
     shopping_signals = [
         "clothes", "clothing", "shirt", "pants", "jeans", "shoes",
@@ -1460,6 +1460,106 @@ def apply_rule_based_party_and_subject_fields(parsed: dict, raw_text: str):
     return parsed
 
 
+def clean_multi_item_subject(value: str):
+    value = normalize_extracted_phrase(value)
+    if value == "unknown":
+        return value
+
+    value = re.sub(
+        r"^\b(?:i|we)\s+(?:purchased|bought|ordered|got|paid\s+for|paid|spent)\s+",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"^\b(?:and|also|plus)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"^\b(?:a|an|the)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value).strip()
+
+    return value if value else "unknown"
+
+
+def extract_multi_item_expense_transactions(raw_text: str, user_currency: str):
+    text = raw_text.strip()
+    lowered = text.lower()
+
+    if infer_recurring_action(text) != "none":
+        return []
+
+    if not any(signal in lowered for signal in ["bought", "purchased", "ordered", "paid", "spent", "got"]):
+        return []
+
+    money_word_pattern = "|".join(re.escape(word) for word in MONEY_WORDS)
+    amount_pattern = (
+        rf"(?:{CURRENCY_SYMBOL_PATTERN}\s*{NUMBER_PATTERN}|"
+        rf"{NUMBER_PATTERN}\s*{CURRENCY_SYMBOL_PATTERN}|"
+        rf"\b{NUMBER_PATTERN}\s*(?:{money_word_pattern})\b|"
+        rf"\b(?:{money_word_pattern})\s*{NUMBER_PATTERN}\b)"
+    )
+
+    item_pattern = re.compile(
+        rf"(?P<item>[^.;,]+?)\s+(?:for|cost(?:ed|s)?|priced\s+at)\s+"
+        rf"(?P<amount>{amount_pattern})",
+        re.IGNORECASE,
+    )
+
+    matches = list(item_pattern.finditer(text))
+    if len(matches) < 2:
+        return []
+
+    note_date = extract_date_from_text(text)
+    counterparty = extract_counterparty_from_text(text, "expense")
+    source = "other"
+    if "credit card" in lowered:
+        source = "credit_card"
+    elif "debit card" in lowered:
+        source = "debit_card"
+    elif "checking" in lowered:
+        source = "checking_account"
+    elif "savings" in lowered:
+        source = "savings_account"
+    elif "cash" in lowered:
+        source = "cash"
+
+    parsed_transactions = []
+    for match in matches:
+        subject = clean_multi_item_subject(match.group("item"))
+        amount = extract_amount_from_text(match.group("amount"))
+
+        if subject == "unknown" or amount <= 0:
+            return []
+
+        item_text = f"{subject} for {match.group('amount')}"
+        parsed = {
+            "raw_text": item_text,
+            "date": note_date,
+            "amount": amount,
+            "currency": user_currency or "USD",
+            "sender": "Me",
+            "receiver": counterparty if counterparty != "unknown" else "unknown",
+            "counterparty": counterparty,
+            "category": "other",
+            "transaction_direction": "expense",
+            "source": source,
+            "origin_type": "note",
+            "status": "completed",
+            "is_recurring": False,
+            "recurring_frequency": "none",
+            "recurring_interval_days": None,
+            "recurring_action": "none",
+            "confidence_score": 0.9,
+            "transaction_subject": subject,
+            "subject_quality": "clear",
+            "missing_fields": [],
+            "ambiguity_reasons": [],
+            "review_level": "none",
+        }
+
+        parsed = validate_and_cleanup(parsed, item_text, user_currency)
+        parsed_transactions.append(parsed)
+
+    return parsed_transactions
+
+
 def rule_based_fallback(raw_text: str, user_currency: str):
     amount = extract_amount_from_text(raw_text)
 
@@ -1574,6 +1674,17 @@ def parse_note(
 ):
     user_currency = note.currency or current_user.default_currency or "USD"
     today_str = str(date.today())
+
+    multi_item_transactions = extract_multi_item_expense_transactions(
+        note.raw_text,
+        user_currency,
+    )
+    if multi_item_transactions:
+        return {
+            "transactions": multi_item_transactions,
+            "review_level": "none",
+            "message": f"Found {len(multi_item_transactions)} transactions.",
+        }
 
     prompt = f"""
 You are a finance transaction extraction engine.

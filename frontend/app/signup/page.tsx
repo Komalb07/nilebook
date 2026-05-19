@@ -11,6 +11,7 @@ export default function SignupPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [message, setMessage] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
@@ -36,6 +37,12 @@ export default function SignupPage() {
     setIsSubmitting(true);
     setMessage("");
     setIsSuccess(false);
+
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match. Please re-enter your password.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const response = await fetch(apiUrl("/signup"), {
@@ -146,13 +153,28 @@ export default function SignupPage() {
               />
             </label>
 
+            <label style={fieldStyle}>
+              <span style={fieldLabelStyle}>Confirm Password</span>
+              <input
+                type="password"
+                placeholder="Re-enter your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </label>
+
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || password !== confirmPassword}
               style={{
                 ...primaryButtonStyle,
-                opacity: isSubmitting ? 0.75 : 1,
-                cursor: isSubmitting ? "not-allowed" : "pointer",
+                opacity: isSubmitting || password !== confirmPassword ? 0.75 : 1,
+                cursor:
+                  isSubmitting || password !== confirmPassword
+                    ? "not-allowed"
+                    : "pointer",
               }}
             >
               {isSubmitting ? "Creating account..." : "Create Account"}
