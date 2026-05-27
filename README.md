@@ -10,7 +10,7 @@ I bought coffee for 5 dollars using cash
 
 Nilebook reads the note, extracts the important details, saves the transaction, and uses it to generate reports.
 
-**Live App:** https://nilebook-blond.vercel.app
+**Live App:** https://www.nilebook.app
 
 ---
 
